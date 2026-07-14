@@ -27,7 +27,7 @@ def seed_db():
 
     print("Seeding products...")
     products = [
-        Product.objects.create(name="Wireless Mouse", price=29.99, sku="PROD-001"),
+        Product.objects.create(name="Gaming  Mouse", price=49.99, sku="PROD-001"),
         Product.objects.create(name="Mechanical Keyboard", price=99.99, sku="PROD-002"),
         Product.objects.create(name="USB-C Hub", price=49.99, sku="PROD-003"),
         Product.objects.create(name="4K Monitor", price=349.99, sku="PROD-004"),
