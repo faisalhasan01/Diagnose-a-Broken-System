@@ -110,3 +110,61 @@ Using **Django Silk** on the seeded database with **250 orders** (each order con
 | **Performance Complexity** | $O(N)$ query scaling | $O(1)$ query scaling | Sub-second scaling |
 
 *Note: In production environments with network overhead (e.g. 5ms DB ping), the Buggy endpoint response time would exceed 15-30 seconds (gateway timeout), whereas the Optimized endpoint would remain under 180ms.*
+
+---
+
+# Section 2: Rate-Limited Async Job Queue Answers
+
+## 1. SIGKILL Durability Analysis
+In Celery, when a worker process is terminated via `SIGKILL` (such as an OOM killer or sudden hardware restart) during task execution:
+- **Default Behavior (`CELERY_TASK_ACKS_LATE = False`):** Celery acknowledges tasks immediately *before* executing them. If the worker is killed in-flight, the task is permanently lost since the message has already been removed from the Redis broker queue.
+- **Durability Solution:** In our implementation, we configured:
+  ```python
+  CELERY_TASK_ACKS_LATE = True
+  CELERY_WORKER_REJECT_ON_WORKER_LOST = True
+  ```
+  - **Late Acknowledgment (`CELERY_TASK_ACKS_LATE = True`):** The task is only acknowledged back to Redis *after* the task runs to successful completion.
+  - **Worker Lost Handling (`CELERY_WORKER_REJECT_ON_WORKER_LOST = True`):** If the worker process running the task receives a `SIGKILL`, the parent worker process intercepts this, rejects the unacknowledged task, and puts it back in the queue.
+  - If the entire worker daemon is killed instantly, the Redis broker notices the connection drop and automatically re-queues the unacknowledged task, delivering it to another active worker.
+
+---
+
+# Section 3: Multi-Tenant Data Isolation Answers
+
+## 1. Thread-Local vs. ContextVar in Async Views
+- **The Failure Mode of Thread-Locals:**
+  - In synchronous Django, each web request is processed sequentially in a dedicated OS thread. Storing tenant context in `threading.local()` is safe because request-scoped data belongs exclusively to that thread.
+  - However, async Django views execute cooperatively on a single event loop thread. Multiple concurrent requests run on the same thread, yielding control back to the event loop at `await` boundaries.
+  - If Request A sets `threading.local().tenant_id = 1` and then yields execution to await a database call, Request B can start on the same thread and set `threading.local().tenant_id = 2`. When Request A resumes execution, it reads the shared thread-local variable and erroneously queries database tables using Request B's tenant context (tenant 2). This causes severe cross-tenant data leaks.
+- **The ContextVars Solution:**
+  - Python's `contextvars` library tracks local states relative to the logical async execution frame (coroutine context) rather than the physical OS thread.
+  - By using `contextvars.ContextVar`, context is automatically copied/isolated when a new coroutine is spawned. When Request A yields, its context remains securely isolated. Request B's changes to the variable are confined to its own coroutine context. This guarantees complete, thread-safe, and async-safe tenant data isolation.
+
+---
+
+# Section 4: Written Architecture Review
+
+## Question A — Django Admin Performance (500k+ Records)
+When a table contains 500,000+ records, three main factors cause the Django admin page to load slowly:
+
+1. **N+1 SQL Queries on Foreign Keys in List View:**
+   - *Investigation:* By default, if the list view displays columns belonging to related tables (e.g., displaying `customer` on the `Order` list view), Django performs a separate lookup query for each rendered row.
+   - *Fix:* Configure `list_select_related = ('customer', 'payment')` in the `ModelAdmin` class. This instructs Django's admin change list to compile an SQL `INNER JOIN` in the initial search query, caching all foreign key attributes in memory.
+2. **Expensive Row Count Scans:**
+   - *Investigation:* Django's admin paginator executes `SELECT COUNT(*)` on the table for every page load to calculate total pages. On large tables, this triggers a full table/index scan in the database engine, taking several seconds.
+   - *Fix:* Set `show_full_result_count = False` in the `ModelAdmin` settings to hide the full count. Alternatively, override the admin class's `paginator` attribute with a custom paginator class that caches the count in Redis or overrides the `.count` property to return an estimated count from SQLite/PostgreSQL system tables.
+3. **Huge Select Dropdowns in Edit/Detail Forms:**
+   - *Investigation:* When editing a record, foreign key relation fields default to rendering HTML select menus. Django attempts to load and populate all 500,000 options from the related table, causing high database load, network transfer delays, and browser memory exhaustion.
+   - *Fix:* Declare `autocomplete_fields = ['customer']` (requires search setup on target ModelAdmin) or `raw_id_fields = ['customer']` inside the `ModelAdmin` definition. This changes the dropdown to a quick, AJAX-based search box or simple input box, loading only selected keys.
+
+## Question B — Pagination Trade-offs
+Pagination strategy is critical for application scalability and dynamic consistency.
+
+1. **Offset-Based Pagination (`LIMIT X OFFSET Y`):**
+   - *Database Scan Behavior:* The database must scan through the first `Y` records and discard them before returning `X` records. When paginating deeply (e.g., `OFFSET 450000 LIMIT 20`), the query performance degrades to $O(N)$ time complexity, causing high disk read IO.
+   - *Data Mutation Risks:* If records are added or deleted by other users while a user is scrolling, the absolute offsets shift. The client will see duplicate records (on new inserts) or skip records entirely (on deletions).
+   - *Best Use Cases:* Admin dashboards where users require direct jumping to arbitrary page numbers (e.g., "Go to Page 150").
+2. **Cursor-Based Pagination (`WHERE id > Y LIMIT X`):**
+   - *Database Scan Behavior:* The query leverages indexed primary/sort keys to jump directly to the target record and reads the next `X` records. This runs in $O(1)$ constant time complexity, maintaining fast response times regardless of depth.
+   - *Data Mutation Risks:* Since pages are relative to a specific record key (the cursor) rather than an offset integer, insertions or deletions do not shift the relative position of items. This prevents duplicates or skipped items on infinite scroll.
+   - *Best Use Cases:* Mobile applications utilizing infinite scroll or activity feeds.

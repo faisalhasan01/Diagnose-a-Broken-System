@@ -1,10 +1,11 @@
-# Django Performance Assessment - Section 1
+# Django Performance, Async Queue & Multi-Tenancy Assessment
 
-This repository demonstrates the investigation, diagnosis, and fix of an $O(N)$ database query scaling issue (the N+1 Query problem) in a Django REST API.
+This repository demonstrates the complete solution for the technical assessment, covering database N+1 optimization, an async rate-limited email queue (Celery + Redis), and automatic multi-tenant data isolation.
 
 ## Requirements
 - Python 3.12+
 - SQLite (default)
+- Redis Server (Required as broker for Celery and the Rate Limiter)
 
 ---
 
@@ -58,16 +59,36 @@ Query reduction: 34 queries saved! (94.4% reduction)
 
 ---
 
-## How to Profile Locally with Django Silk
+## How to Run & Profile Locally
 
-### 1. Launch Development Server
+### 1. Start the Redis Server
+Ensure your Redis server is running on the default port `6379`.
+- **On Windows:** (Using the winget installed port)
+  Double-click `redis-server.exe` or execute `redis-server` in a command line window.
+- **Using Docker (Alternative):**
+  ```bash
+  docker run --name redis-server -p 6379:6379 -d redis
+  ```
+
+### 2. Launch Celery Worker (Section 2)
+In a separate terminal, activate the virtual environment and run the Celery worker.
+- **On Windows:** (Requires a thread pool worker execution pool context because Windows lacks `fork()` support):
+  ```bash
+  celery -A django_perf_assessment worker --loglevel=info -P threads
+  ```
+- **On macOS/Linux:**
+  ```bash
+  celery -A django_perf_assessment worker --loglevel=info
+  ```
+
+### 3. Launch Django Development Server
 You can launch the server using your terminal:
 ```bash
 python manage.py runserver
 ```
 Or, on Windows, simply double-click the **`run.bat`** file in the project folder to start it automatically.
 
-### 2. View the Interactive Dashboard UI
+### 4. View the Interactive Dashboard UI
 Open your browser and visit:
 ```text
 http://127.0.0.1:8000/

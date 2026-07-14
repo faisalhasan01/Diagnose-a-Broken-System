@@ -8,15 +8,21 @@ from django.utils import timezone
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'django_perf_assessment.settings')
 django.setup()
 
-from orders.models import Customer, Product, Order, OrderItem, Payment
+from orders.models import Customer, Product, Order, OrderItem, Payment, Tenant, TenantContext
 
 def seed_db():
     print("Clearing existing data...")
+    Tenant.objects.all().delete()  # Cascades to clear Orders, Payments, and OrderItems
     Customer.objects.all().delete()
     Product.objects.all().delete()
-    Order.objects.all().delete()
-    OrderItem.objects.all().delete()
-    Payment.objects.all().delete()
+
+    print("Creating default tenant...")
+    tenant = Tenant.objects.create(
+        name="Artikate Studio Client A",
+        subdomain="tenant-a"
+    )
+    # Set the tenant context for the current process/thread
+    TenantContext.set_current_tenant_id(tenant.id)
 
     print("Seeding customer...")
     customer = Customer.objects.create(
@@ -67,6 +73,7 @@ def seed_db():
                     price=product.price
                 )
 
+    TenantContext.clear()
     print("Seeding completed successfully!")
     print(f"Created: 1 Customer, {len(products)} Products, 250 Orders, 250 Payments.")
 
