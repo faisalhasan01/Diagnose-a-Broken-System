@@ -799,23 +799,28 @@ WHERE order_id IN (...);</code></pre>
 
         let html = '';
         orders.forEach(order => {
-            // Render items list
+            // Render items list from the items_summary string
             let itemsHtml = '<ul class="items-list">';
-            order.items.forEach(item => {
-                itemsHtml += `
-                    <li class="item-row">
-                        <span class="item-name">${item.product_name}</span>
-                        <span class="item-qty">x${item.quantity}</span>
-                        <span style="color: var(--text-secondary)">$${item.price_at_purchase}</span>
-                    </li>
-                `;
-            });
+            if (order.items_summary) {
+                const items = order.items_summary.split(', ');
+                items.forEach(item => {
+                    if (item.trim()) {
+                        itemsHtml += `
+                            <li class="item-row">
+                                <span class="item-name">${item}</span>
+                            </li>
+                        `;
+                    }
+                });
+            } else {
+                itemsHtml += `<li class="item-row"><span class="item-name" style="color: var(--text-secondary)">No items</span></li>`;
+            }
             itemsHtml += '</ul>';
 
             // Payment status formatting
-            const isPaid = order.payment_status === 'PAID';
-            const statusClass = isPaid ? 'status-paid' : 'status-unpaid';
-            const statusLabel = isPaid ? 'Paid' : 'Unpaid';
+            const isCompleted = order.payment_status === 'COMPLETED';
+            const statusClass = isCompleted ? 'status-paid' : 'status-unpaid';
+            const statusLabel = order.payment_status || 'N/A';
 
             // Date formatting
             const date = new Date(order.created_at).toLocaleDateString('en-US', {
@@ -838,7 +843,7 @@ WHERE order_id IN (...);</code></pre>
                         </span>
                     </td>
                     <td>${itemsHtml}</td>
-                    <td class="total-amount">$${order.total_amount}</td>
+                    <td class="total-amount">$${order.total_price}</td>
                 </tr>
             `;
         });
