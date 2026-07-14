@@ -46,3 +46,15 @@ class FastOrderSummaryView(APIView):
         )
         serializer = OrderSummarySerializer(orders, many=True)
         return Response(serializer.data)
+
+
+from django.views.generic import TemplateView
+from .models import Customer
+
+class DashboardView(TemplateView):
+    template_name = 'orders/dashboard.html'
+
+    def get_context_data(self, **kwargs):
+        context = super().get_context_data(**kwargs)
+        context['customers'] = Customer.objects.all()
+        return context
