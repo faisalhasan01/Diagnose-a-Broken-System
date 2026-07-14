@@ -61,12 +61,24 @@ Query reduction: 34 queries saved! (94.4% reduction)
 ## How to Profile Locally with Django Silk
 
 ### 1. Launch Development Server
+You can launch the server using your terminal:
 ```bash
 python manage.py runserver
 ```
+Or, on Windows, simply double-click the **`run.bat`** file in the project folder to start it automatically.
 
-### 2. Trigger the API Endpoints
-Make requests to both the slow and fast endpoints to generate profiling records:
+### 2. View the Interactive Dashboard UI
+Open your browser and visit:
+```text
+http://127.0.0.1:8000/
+```
+From here you can:
+- Select a customer from the dropdown.
+- Toggle between **Slow (Unoptimized)** and **Fast (Optimized)** querying modes.
+- Visually inspect the database query counts, response latency metrics, and real-time performance gains side-by-side.
+
+### 3. Trigger the JSON API Endpoints Directly
+If you wish to query raw JSON payloads directly:
 - **Buggy (Slow) Endpoint:**
   ```text
   GET http://127.0.0.1:8000/api/orders/summary/?customer_id=1
@@ -76,8 +88,8 @@ Make requests to both the slow and fast endpoints to generate profiling records:
   GET http://127.0.0.1:8000/api/orders/summary-fixed/?customer_id=1
   ```
 
-### 3. View the Profiler Dashboard
-Open your browser and visit:
+### 4. View the Silk Profiler Dashboard
+To inspect SQL statements and execution traces, visit:
 ```text
 http://127.0.0.1:8000/silk/
 ```
@@ -85,3 +97,4 @@ Here, you can review:
 - The execution time comparison between both paths.
 - The exact SQL statements executed.
 - The SQL query counts (reducing from **1,491 queries** in the buggy view down to exactly **2 queries** in the fixed view).
+
