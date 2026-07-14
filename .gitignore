@@ -17,3 +17,7 @@ db.sqlite3
 # IDEs
 .vscode/
 .idea/
+
+# Redis snapshots
+*.rdb
+dump.rdb
